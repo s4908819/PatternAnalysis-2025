@@ -98,3 +98,21 @@ def make_loader(img_dir: str, mask_dir: str, num_classes: int, batch=16, shuffle
     ds = SlicePairDataset(img_dir, mask_dir, num_classes, augment=augment, debug_once=True)
     return DataLoader(ds, batch_size=batch, shuffle=shuffle,
                       num_workers=workers, pin_memory=pin_memory)
+
+
+# 支持 keras_png_slices_* 目录结构
+SPLIT_TO_DIR = {
+    "train":    ("keras_png_slices_train",    "keras_png_slices_seg_train"),
+    "validate": ("keras_png_slices_validate", "keras_png_slices_seg_validate"),
+    "val":      ("keras_png_slices_validate", "keras_png_slices_seg_validate"),
+    "test":     ("keras_png_slices_test",     "keras_png_slices_seg_test"),
+}
+
+def make_loader_from_split(root, split, num_classes, batch=16, shuffle=True, augment=False, workers=0):
+    import os
+    from torch.utils.data import DataLoader
+    img_sub, mask_sub = SPLIT_TO_DIR[split]
+    img_dir  = os.path.join(root, img_sub)
+    mask_dir = os.path.join(root, mask_sub)
+    ds = SlicePairDataset(img_dir, mask_dir, num_classes, augment=augment, debug_once=True)
+    return DataLoader(ds, batch_size=batch, shuffle=shuffle, num_workers=workers, pin_memory=True)
