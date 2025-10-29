@@ -12,15 +12,45 @@ def set_seed(seed: int = 4908819):
 
 def to_one_hot(mask: np.ndarray, num_classes: int) -> np.ndarray:
     """
-    mask: HxW integer labels in [0..K-1]
+    mask: HxW integer class indices in [0..K-1]
     return: CxHxW float32 one-hot (0/1)
     """
     h, w = mask.shape
     oh = np.zeros((num_classes, h, w), dtype=np.float32)
-    # 向量化写法也可，这里保留直观循环
     for c in range(num_classes):
         oh[c] = (mask == c).astype(np.float32)
     return oh
+
+def map_mask_indices_gray(m: np.ndarray, num_classes: int) -> np.ndarray:
+    """
+    将灰度标签映射为类别索引：
+      - 4 类常见：{0,85,170,255} -> {0,1,2,3}
+      - 2 类常见：{0,255}       -> {0,1}
+    若灰度存在轻微噪声，使用就近到 85 的倍数进行兜底。
+    """
+    vals = set(np.unique(m).tolist())
+
+    # 二分类（0/255）
+    if vals.issubset({0, 255}) or (num_classes == 2 and max(vals) > 1):
+        # 精确 LUT
+        lut = np.zeros(256, dtype=np.uint8)
+        lut[0] = 0
+        lut[255] = 1
+        mapped = lut[m]
+        return mapped.astype(np.uint8)
+
+    # 四分类（0/85/170/255）
+    expected4 = {0, 85, 170, 255}
+    if vals.issubset(expected4):
+        lut = np.zeros(256, dtype=np.uint8)
+        lut[0] = 0; lut[85] = 1; lut[170] = 2; lut[255] = 3
+        mapped = lut[m]
+        return mapped.astype(np.uint8)
+
+    # 兜底：就近到 85 的倍数（四分类）
+    mapped = np.rint(m / 85.0).astype(np.int32)
+    mapped = np.clip(mapped, 0, max(1, num_classes - 1)).astype(np.uint8)
+    return mapped
 
 # ------------- dataset -------------
 
@@ -42,23 +72,35 @@ class SlicePairDataset(Dataset):
         if ip.lower().endswith(".npy"):
             arr = np.load(ip).astype(np.float32)
         else:
-            # 单通道灰度
+            # 单通道灰度 -> float32
             arr = np.array(Image.open(ip).convert("F"), dtype=np.float32)
         return arr
 
-    def _load_mask(self, mp: str) -> np.ndarray:
+    def _load_mask_gray(self, mp: str) -> np.ndarray:
+        """
+        加载灰度 mask，并映射到类索引（见 map_mask_indices_gray）。
+        输出为 HxW 的 uint8 索引（0..K-1）。
+        """
         if mp.lower().endswith(".npy"):
-            arr = np.load(mp).astype(np.int64)
+            raw = np.load(mp).astype(np.int64)
+            # 若已是索引（0..K-1），直接返回；否则尝试映射
+            if raw.max() <= max(1, self.num_classes - 1):
+                return raw.astype(np.uint8)
+            # 将 raw 视为灰度，做映射
+            raw = np.clip(raw, 0, 255).astype(np.uint8)
+            idx = map_mask_indices_gray(raw, self.num_classes)
+            return idx
         else:
-            arr = np.array(Image.open(mp).convert("L"), dtype=np.int64)
-        return arr
+            gray = np.array(Image.open(mp).convert("L"), dtype=np.uint8)
+            idx = map_mask_indices_gray(gray, self.num_classes)
+            return idx
 
     def __getitem__(self, i: int):
         ip, mp = self.img_paths[i], self.mask_paths[i]
 
         # ---- load
-        img = self._load_img(ip)     # HxW float32
-        mask = self._load_mask(mp)   # HxW int64
+        img = self._load_img(ip)             # HxW float32
+        idx = self._load_mask_gray(mp)       # HxW uint8 in [0..K-1]
 
         # ---- z-score normalize image
         m, s = img.mean(), img.std() + 1e-6
@@ -67,11 +109,11 @@ class SlicePairDataset(Dataset):
         # ---- simple paired augmentation (example: horizontal flip)
         if self.augment and random.random() < 0.5:
             img = np.flip(img, axis=1).copy()
-            mask = np.flip(mask, axis=1).copy()
+            idx = np.flip(idx, axis=1).copy()
 
         # ---- to CHW
         img = img[None, ...]  # 1xHxW
-        mask_oh = to_one_hot(mask, self.num_classes)  # CxHxW float32
+        mask_oh = to_one_hot(idx.astype(np.int64), self.num_classes)  # CxHxW float32
 
         if self.as_tensor:
             img = torch.from_numpy(img).float()
@@ -99,7 +141,6 @@ def make_loader(img_dir: str, mask_dir: str, num_classes: int, batch=16, shuffle
     return DataLoader(ds, batch_size=batch, shuffle=shuffle,
                       num_workers=workers, pin_memory=pin_memory)
 
-
 # 支持 keras_png_slices_* 目录结构
 SPLIT_TO_DIR = {
     "train":    ("keras_png_slices_train",    "keras_png_slices_seg_train"),
@@ -109,8 +150,6 @@ SPLIT_TO_DIR = {
 }
 
 def make_loader_from_split(root, split, num_classes, batch=16, shuffle=True, augment=False, workers=0):
-    import os
-    from torch.utils.data import DataLoader
     img_sub, mask_sub = SPLIT_TO_DIR[split]
     img_dir  = os.path.join(root, img_sub)
     mask_dir = os.path.join(root, mask_sub)
