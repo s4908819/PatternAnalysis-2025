@@ -10,7 +10,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# === 关键改动：使用 HipMRI 数据加载器与 ResUNet ===
+# === 使用 HipMRI 数据加载器与 ResUNet ===
 from dataset_hipmri import make_loader_from_split
 from modules_resunet import UNetRes  # 保持与训练一致的模型
 
@@ -97,22 +97,29 @@ def main():
     ap.add_argument("--base", type=int, default=32, help="ResUNet 的 base 通道数（16/32）")
     ap.add_argument("--resize", type=int, default=256,
                     help="可选：统一缩放到 (resize, resize)；传 0 表示不缩放")
+    # 新增：二分类开关（前景 vs 背景）
+    ap.add_argument("--binary", type=int, default=0,
+                    help="是否启用二分类模式（前景=非0），1 启用 / 0 关闭")
     args = ap.parse_args()
 
     has_cuda = torch.cuda.is_available()
     auto_workers = (4 if has_cuda else 0) if args.workers is None else args.workers
     resize_to = None if args.resize in (0, None) else (args.resize, args.resize)
 
+    print(f"[config] data_root={args.data_root}  num_classes={args.num_classes}  binary={args.binary}")
+    print(f"[config] epochs={args.epochs}  batch={args.batch}  lr={args.lr}  base={args.base}  resize={args.resize}")
+    print(f"[config] workers={auto_workers}  device={'cuda' if has_cuda else 'cpu'}")
+
     # DataLoaders（与 dataset_hipmri.py 一致）
     train_loader = make_loader_from_split(
         root=args.data_root, split="train", num_classes=args.num_classes,
         batch=args.batch, shuffle=True, augment=True, workers=auto_workers,
-        resize_to=resize_to
+        resize_to=resize_to, binary=bool(args.binary)
     )
     val_loader = make_loader_from_split(
         root=args.data_root, split="validate", num_classes=args.num_classes,
         batch=args.batch, shuffle=False, augment=False, workers=auto_workers,
-        resize_to=resize_to
+        resize_to=resize_to, binary=bool(args.binary)
     )
 
     device = torch.device("cuda" if has_cuda else "cpu")
@@ -140,6 +147,7 @@ def main():
             logits = model(img)                   # (B,K,H,W)
             logits = upsample_to_target(logits, mask)
 
+            # 二分类与多分类均以 no-bg Dice 作为优化/监控指标（K=2 时即前景通道）
             loss, ce_val, dice_val = ce_dice_loss(logits, mask, exclude_background=True)
             loss.backward()
             opt.step()
@@ -188,6 +196,7 @@ def main():
                     "num_classes": args.num_classes,
                     "base": args.base,
                     "resize": args.resize,
+                    "binary": int(args.binary),
                 },
                 os.path.join(args.out, "best.pt")
             )

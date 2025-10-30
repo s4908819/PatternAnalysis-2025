@@ -2,10 +2,12 @@
 """
 HipMRI 2D 切片数据集（按“Reading Nifti Files”规范适配）：
 - 图像：支持 PNG / JPG / TIF / NPY / NIfTI(.nii/.nii.gz)
-- 掩码：支持 PNG / JPG / TIF / NPY / NIfTI；自动将灰度或整数标签映射为类别索引，并导出 one-hot
-- 输出：img -> (1,H,W) float32 (z-score)，mask_onehot -> (K,H,W) float32
+- 掩码：支持 PNG / JPG / TIF / NPY / NIfTI；自动将灰度或整数标签映射为类别索引
+- 输出：
+  • 二分类(binary=True)：mask -> (2,H,W) float32（two-hot，通道顺序= [背景, 前列腺]，前列腺标签=prostate_label，默认2）
+  • 多分类(binary=False)：mask -> (K,H,W) float32（one-hot）
 - Resize：图像用 BILINEAR，掩码用 NEAREST（避免类别插值）
-- 训练开关：支持 binary（二分类，把>0当前景）与显式 label_map（原始编号->连贯索引）
+- 数据配对：按去前缀名（去掉 case_/seg_）一一对齐，避免排序错配
 - 与现有训练/评测脚本兼容：保留 make_loader / make_loader_from_split
 """
 
@@ -72,7 +74,7 @@ def _nifti_get_2d_array(path: str, dtype=np.float32) -> np.ndarray:
     - 若带多余单例维度 -> squeeze
     """
     img = nib.load(path)
-    arr = img.get_fdata(caching="unchanged")  # read-from-disk
+    arr = img.get_fdata(caching="unchanged")  # 直接从磁盘读
     arr = np.asarray(arr)
     arr = np.squeeze(arr)
 
@@ -86,21 +88,16 @@ def _nifti_get_2d_array(path: str, dtype=np.float32) -> np.ndarray:
 
 # -------------------- 路径解析：兼容多种目录命名 --------------------
 
-# 常见 split 子目录命名（无上层包装）
 PLAIN_SPLIT = {
     "train":    ("keras_png_slices_train",    "keras_png_slices_seg_train"),
     "validate": ("keras_png_slices_validate", "keras_png_slices_seg_validate"),
     "val":      ("keras_png_slices_validate", "keras_png_slices_seg_validate"),
     "test":     ("keras_png_slices_test",     "keras_png_slices_seg_test"),
 }
-
-# 上层多一层 "keras_slices_data/"
 WRAPPED_SPLIT = {
     k: (os.path.join("keras_slices_data", v[0]), os.path.join("keras_slices_data", v[1]))
     for k, v in PLAIN_SPLIT.items()
 }
-
-# 兼容早期少了 "png" 的命名
 PLAIN_FALLBACK = {
     "train":    ("keras_slices_train",    "keras_slices_seg_train"),
     "validate": ("keras_slices_validate", "keras_slices_seg_validate"),
@@ -134,13 +131,18 @@ def _resolve_split_dirs(root: str, split: str) -> Tuple[str, str]:
 
 # -------------------- Dataset --------------------
 
+def _norm_name(bn: str) -> str:
+    # 去掉前缀 case_/seg_ 以便成对配对
+    return os.path.basename(bn).replace("case_", "").replace("seg_", "")
+
 class HipMRISliceDataset(Dataset):
     """
     加载 HipMRI/OASIS 风格的 2D 切片数据（图像/掩码成对）。
     - 自动识别 PNG/JPG/TIF/NPY/NIfTI
     - 图像 z-score 归一化
-    - 掩码：binary（>0→1）或显式 label_map（原始编号->索引），否则灰度/整数自适应映射
-    - 输出 mask 为 one-hot（KxHxW）
+    - 掩码：
+        • binary=True -> (raw == prostate_label) → 索引0/1 → 返回 two-hot (2,H,W)，[bg, fg]
+        • binary=False -> 多分类索引 -> one-hot (K,H,W)
     """
     def __init__(
         self,
@@ -153,11 +155,17 @@ class HipMRISliceDataset(Dataset):
         resize_to: Optional[Tuple[int, int]] = None,  # (H, W)
         binary: bool = False,
         label_map: Optional[Dict[int, int]] = None,
+        prostate_label: int = 2,   # ★ 新增：二分类时的前列腺编号（默认 2）
     ):
-        self.img_paths = sorted([p for p in glob.glob(os.path.join(img_dir, "*")) if not os.path.isdir(p)])
-        self.mask_paths = sorted([p for p in glob.glob(os.path.join(mask_dir, "*")) if not os.path.isdir(p)])
-        assert len(self.img_paths) == len(self.mask_paths) and len(self.img_paths) > 0, \
-            f"pairs not found in: {img_dir} | {mask_dir}"
+        # —— 按规范名配对（避免仅按排序导致错配） ——
+        img_all = [p for p in glob.glob(os.path.join(img_dir, "*")) if not os.path.isdir(p)]
+        msk_all = [p for p in glob.glob(os.path.join(mask_dir, "*")) if not os.path.isdir(p)]
+        img_dict = {_norm_name(p): p for p in img_all}
+        msk_dict = {_norm_name(p): p for p in msk_all}
+        names = sorted(list(set(img_dict.keys()) & set(msk_dict.keys())))
+        assert len(names) > 0, f"no paired files in: {img_dir} | {mask_dir}"
+        self.img_paths = [img_dict[n] for n in names]
+        self.mask_paths = [msk_dict[n] for n in names]
 
         self.num_classes = num_classes
         self.augment = augment
@@ -165,6 +173,7 @@ class HipMRISliceDataset(Dataset):
         self.resize_to = resize_to
         self.binary = binary
         self.label_map = label_map
+        self.prostate_label = int(prostate_label)
         if self.binary and self.num_classes != 2:
             raise ValueError("binary=True 时请设置 num_classes=2")
 
@@ -183,7 +192,8 @@ class HipMRISliceDataset(Dataset):
             pil = pil.resize((W, H), resample=Image.NEAREST)
             return np.array(pil, dtype=np.uint8)
         else:
-            pil = Image.fromarray(arr.astype(np.float32))
+            # PIL 'F' 模式支持 float32
+            pil = Image.fromarray(arr.astype(np.float32), mode="F")
             pil = pil.resize((W, H), resample=Image.BILINEAR)
             return np.array(pil, dtype=np.float32)
 
@@ -221,12 +231,14 @@ class HipMRISliceDataset(Dataset):
         """
         将任意 raw 掩码（灰度/浮点/整数）转为稠密类别索引(0..K-1)。
         优先级：
-        1) binary -> (raw>0).astype(uint8)
+        1) binary -> (raw == prostate_label).astype(uint8)
         2) 明确 label_map -> 把 raw（取整）按字典映射到索引
         3) 自动：若是整型且范围在[0..K-1]，直接作为索引；否则走 map_mask_indices_gray
         """
+        # ★★ 二分类：只保留“前列腺=prostate_label”为前景 ★★
         if self.binary:
-            return (raw > 0).astype(np.uint8)
+            rawi = np.rint(raw).astype(np.int32)
+            return (rawi == self.prostate_label).astype(np.uint8)
 
         if self.label_map is not None:
             rawi = np.rint(raw).astype(np.int32)
@@ -259,44 +271,52 @@ class HipMRISliceDataset(Dataset):
             img = self._resize_np(img, is_mask=False)
             raw = self._resize_np(raw, is_mask=True)
 
-        # ---- 掩码转索引/one-hot
-        idx = self._mask_to_index(raw)        # HxW uint8 (0..K-1)
+        # ---- 掩码转索引 / one-hot（binary=True 返回 two-hot）
+        idx = self._mask_to_index(raw)        # HxW uint8 (0/1 or 0..K-1)
 
         # ---- z-score normalize
         mean = img.mean()
         std = img.std() + 1e-6
         img = (img - mean) / std
 
-        # ---- paired augmentation（可按需扩展）
+        # ---- 简单增广（镜像）
         if self.augment and random.random() < 0.5:
             img = np.flip(img, axis=1).copy()
             idx = np.flip(idx, axis=1).copy()
 
-        # ---- CHW / one-hot
-        img = img[None, ...]                     # 1xHxW
-        mask_oh = to_one_hot(idx, self.num_classes, dtype=np.float32)  # KxHxW
+        # ---- CHW
+        img = img[None, ...].astype(np.float32)  # 1xHxW
+
+        if self.binary:
+            # 二分类输出 two-hot [bg, fg]，(2,H,W) —— 兼容 CE/Dice 等多类损失
+            # idx 取值 0/1：0=背景，1=前景(前列腺)
+            mask = to_one_hot(idx, 2, dtype=np.float32)       # 2xHxW
+        else:
+            # 多分类 one-hot（KxHxW）
+            mask = to_one_hot(idx, self.num_classes, dtype=np.float32)
 
         if self.as_tensor:
             img = torch.from_numpy(img).float()
-            mask_oh = torch.from_numpy(mask_oh).float()
+            mask = torch.from_numpy(mask).float()
 
         if not self._printed_debug:
             self._printed_debug = True
             print(f"[hipmri dataset] sample0 img {tuple(img.shape)} {img.dtype} | "
-                  f"mask {tuple(mask_oh.shape)} {mask_oh.dtype}")
+                  f"mask {tuple(mask.shape)} {mask.dtype} | binary={self.binary} plabel={self.prostate_label}")
 
-        return img, mask_oh
+        return img, mask
 
 # -------------------- Dataloader 接口 --------------------
 
 def make_loader(img_dir: str, mask_dir: str, num_classes: int, batch=16, shuffle=True,
                 augment=False, workers=2, pin_memory=True,
                 resize_to: Optional[Tuple[int, int]] = None,
-                binary: bool = False, label_map: Optional[Dict[int, int]] = None) -> DataLoader:
+                binary: bool = False, label_map: Optional[Dict[int, int]] = None,
+                prostate_label: int = 2) -> DataLoader:
     ds = HipMRISliceDataset(
         img_dir, mask_dir, num_classes,
         augment=augment, debug_once=True, resize_to=resize_to,
-        binary=binary, label_map=label_map
+        binary=binary, label_map=label_map, prostate_label=prostate_label
     )
     return DataLoader(ds, batch_size=batch, shuffle=shuffle,
                       num_workers=workers, pin_memory=pin_memory)
@@ -304,7 +324,8 @@ def make_loader(img_dir: str, mask_dir: str, num_classes: int, batch=16, shuffle
 def make_loader_from_split(root: str, split: str, num_classes: int, batch=16, shuffle=True,
                            augment=False, workers=0, pin_memory=True,
                            resize_to: Optional[Tuple[int, int]] = None,
-                           binary: bool = False, label_map: Optional[Dict[int, int]] = None) -> DataLoader:
+                           binary: bool = False, label_map: Optional[Dict[int, int]] = None,
+                           prostate_label: int = 2) -> DataLoader:
     """
     root: 指向包含 (可选) keras_slices_data/keras_png_slices_* 与 *_seg_* 的目录
     - 自动在以下四种结构中查找：
@@ -317,7 +338,7 @@ def make_loader_from_split(root: str, split: str, num_classes: int, batch=16, sh
     ds = HipMRISliceDataset(
         img_dir, mask_dir, num_classes,
         augment=augment, debug_once=True, resize_to=resize_to,
-        binary=binary, label_map=label_map
+        binary=binary, label_map=label_map, prostate_label=prostate_label
     )
     return DataLoader(ds, batch_size=batch,
                       shuffle=(shuffle if split == "train" else False),
