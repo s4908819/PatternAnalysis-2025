@@ -23,23 +23,23 @@ def to_one_hot(mask: np.ndarray, num_classes: int) -> np.ndarray:
 
 def map_mask_indices_gray(m: np.ndarray, num_classes: int) -> np.ndarray:
     """
-    将灰度标签映射为类别索引：
-      - 4 类常见：{0,85,170,255} -> {0,1,2,3}
-      - 2 类常见：{0,255}       -> {0,1}
-    若灰度存在轻微噪声，使用就近到 85 的倍数进行兜底。
+    Map grayscale mask values to class indices:
+      - Common 4-class: {0,85,170,255} -> {0,1,2,3}
+      - Common 2-class: {0,255}        -> {0,1}
+    If slight grayscale noise exists, fall back to rounding to the nearest multiple of 85.
     """
     vals = set(np.unique(m).tolist())
 
-    # 二分类（0/255）
+    # Binary (0/255)
     if vals.issubset({0, 255}) or (num_classes == 2 and max(vals) > 1):
-        # 精确 LUT
+        # Exact LUT
         lut = np.zeros(256, dtype=np.uint8)
         lut[0] = 0
         lut[255] = 1
         mapped = lut[m]
         return mapped.astype(np.uint8)
 
-    # 四分类（0/85/170/255）
+    # 4-class (0/85/170/255)
     expected4 = {0, 85, 170, 255}
     if vals.issubset(expected4):
         lut = np.zeros(256, dtype=np.uint8)
@@ -47,7 +47,7 @@ def map_mask_indices_gray(m: np.ndarray, num_classes: int) -> np.ndarray:
         mapped = lut[m]
         return mapped.astype(np.uint8)
 
-    # 兜底：就近到 85 的倍数（四分类）
+    # Fallback: round to nearest multiple of 85 (4-class style)
     mapped = np.rint(m / 85.0).astype(np.int32)
     mapped = np.clip(mapped, 0, max(1, num_classes - 1)).astype(np.uint8)
     return mapped
@@ -64,7 +64,7 @@ class SlicePairDataset(Dataset):
         self.num_classes = num_classes
         self.augment = augment
         self.as_tensor = as_tensor
-        self._printed_debug = not debug_once  # 若 True 则不再打印
+        self._printed_debug = not debug_once  # If True, no further debug prints
 
     def __len__(self): return len(self.img_paths)
 
@@ -72,21 +72,21 @@ class SlicePairDataset(Dataset):
         if ip.lower().endswith(".npy"):
             arr = np.load(ip).astype(np.float32)
         else:
-            # 单通道灰度 -> float32
+            # single-channel grayscale -> float32
             arr = np.array(Image.open(ip).convert("F"), dtype=np.float32)
         return arr
 
     def _load_mask_gray(self, mp: str) -> np.ndarray:
         """
-        加载灰度 mask，并映射到类索引（见 map_mask_indices_gray）。
-        输出为 HxW 的 uint8 索引（0..K-1）。
+        Load a grayscale mask and map to class indices (see map_mask_indices_gray).
+        Output is HxW uint8 indices in [0..K-1].
         """
         if mp.lower().endswith(".npy"):
             raw = np.load(mp).astype(np.int64)
-            # 若已是索引（0..K-1），直接返回；否则尝试映射
+            # If already indices (0..K-1), return directly; otherwise attempt mapping
             if raw.max() <= max(1, self.num_classes - 1):
                 return raw.astype(np.uint8)
-            # 将 raw 视为灰度，做映射
+            # Treat raw as grayscale and map
             raw = np.clip(raw, 0, 255).astype(np.uint8)
             idx = map_mask_indices_gray(raw, self.num_classes)
             return idx
@@ -141,7 +141,7 @@ def make_loader(img_dir: str, mask_dir: str, num_classes: int, batch=16, shuffle
     return DataLoader(ds, batch_size=batch, shuffle=shuffle,
                       num_workers=workers, pin_memory=pin_memory)
 
-# 支持 keras_png_slices_* 目录结构
+# Support keras_png_slices_* directory structure
 SPLIT_TO_DIR = {
     "train":    ("keras_png_slices_train",    "keras_png_slices_seg_train"),
     "validate": ("keras_png_slices_validate", "keras_png_slices_seg_validate"),

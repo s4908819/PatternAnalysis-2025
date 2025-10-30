@@ -5,7 +5,7 @@ from PIL import Image
 import torch
 import torch.nn.functional as F
 
-from modules import UNet  # 与 train.py 保持一致（UNet, 参数 in_ch/n_classes/base）
+from modules import UNet  # Keep consistent with train.py (UNet, params in_ch/n_classes/base)
 
 def upsample_to_hw(logits: torch.Tensor, hw: tuple[int, int]) -> torch.Tensor:
     """Resize logits[N,C,h,w] to (H,W) via bilinear interpolation (only resize logits)."""
@@ -18,12 +18,12 @@ def overlay_mask(img: np.ndarray, pred: np.ndarray, num_classes: int = 4) -> Ima
     img: HxW float (z-scored OK), pred: HxW integer labels [0..K-1]
     Return RGB overlay for quick visual check.
     """
-    # 灰度归一化到 [0,1]
+    # Normalize grayscale to [0,1]
     gmin, gmax = float(img.min()), float(img.max())
     img_norm = (img - gmin) / (gmax - gmin + 1e-6)
     rgb = np.stack([img_norm]*3, axis=-1)
 
-    # 颜色表：背景0不染色，其它类给出区分色；可自行扩展/调整
+    # Color palette: class 0 (background) is not tinted; other classes get distinct colors; extend/adjust as needed
     palette = [
         (0.0, 0.0, 0.0),   # class 0: no tint
         (1.0, 0.0, 0.0),   # class 1: red
@@ -33,11 +33,11 @@ def overlay_mask(img: np.ndarray, pred: np.ndarray, num_classes: int = 4) -> Ima
         (1.0, 0.0, 1.0),   # class 5: magenta
         (0.0, 1.0, 1.0),   # class 6: cyan
     ]
-    # 确保有足够颜色
+    # Ensure there are enough colors
     while len(palette) < num_classes:
         palette.append((np.random.rand(), np.random.rand(), np.random.rand()))
 
-    # 叠加：保持 60% 原图 + 40% 色彩
+    # Overlay: keep 60% original image + 40% color
     for k in range(1, num_classes):
         tint = np.array(palette[k])
         mask_k = (pred == k)
@@ -72,7 +72,7 @@ def main():
     # build model (keep same hyper-params as training)
     model = UNet(in_ch=1, n_classes=args.num_classes, base=args.base)
     ckpt = torch.load(args.weights, map_location="cpu")
-    state_dict = ckpt.get("model", ckpt)  # 兼容直接保存 state_dict 的情况
+    state_dict = ckpt.get("model", ckpt)  # Compatible with checkpoints saved as raw state_dict
     model.load_state_dict(state_dict)
     model.eval()
 
@@ -80,7 +80,7 @@ def main():
         logits = model(x)                 # [1,C,h',w']
         logits = upsample_to_hw(logits, (H, W))
         probs = torch.sigmoid(logits)[0].cpu().numpy()      # CxHxW
-        # 对互斥语义分割：argmax；如需多标签可改成 >0.5 的逐类阈值
+        # For mutually exclusive semantic segmentation: argmax; for multi-label, switch to per-class threshold > 0.5
         pred = probs.argmax(axis=0).astype(np.int64)        # HxW
 
     overlay = overlay_mask(img, pred, num_classes=args.num_classes)
