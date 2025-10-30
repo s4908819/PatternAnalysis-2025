@@ -5,12 +5,12 @@ from PIL import Image
 import torch
 import torch.nn.functional as F
 
-# 使用残差版 U-Net（与训练保持一致）
-from modules_resunet import UNetRes  # in_ch/n_classes/base 需与训练一致
+# Use residual U-Net (consistent with training)
+from modules_resunet import UNetRes  # in_ch/n_classes/base must match the training setup
 
 
 def upsample_to_hw(logits: torch.Tensor, hw: tuple[int, int]) -> torch.Tensor:
-    """Resize logits[N,C,h,w] to (H,W) via bilinear interpolation (only resize logits)."""
+    """Resize logits[N,C,h,w] to (H,W) via bilinear interpolation (resize logits only)."""
     if logits.shape[-2:] != hw:
         logits = F.interpolate(logits, size=hw, mode="bilinear", align_corners=False)
     return logits
@@ -19,16 +19,16 @@ def upsample_to_hw(logits: torch.Tensor, hw: tuple[int, int]) -> torch.Tensor:
 def overlay_mask(img: np.ndarray, pred: np.ndarray, num_classes: int = 4) -> Image.Image:
     """
     img: HxW float (z-scored OK), pred: HxW integer labels [0..K-1]
-    Return RGB overlay for quick visual check.
+    Return RGB overlay for quick visual inspection.
     """
-    # 灰度归一化到 [0,1]
+    # Normalize grayscale to [0,1]
     gmin, gmax = float(img.min()), float(img.max())
     img_norm = (img - gmin) / (gmax - gmin + 1e-6)
     rgb = np.stack([img_norm] * 3, axis=-1)
 
-    # 颜色表：背景0不染色，其它类给出区分色；可自行扩展/调整
+    # Color palette: class 0 = background/no tint, others are distinct colors (extend as needed)
     palette = [
-        (0.0, 0.0, 0.0),   # class 0: background/no tint
+        (0.0, 0.0, 0.0),   # class 0: background / no tint
         (1.0, 0.0, 0.0),   # class 1: red
         (0.0, 1.0, 0.0),   # class 2: green
         (0.0, 0.0, 1.0),   # class 3: blue
@@ -39,7 +39,7 @@ def overlay_mask(img: np.ndarray, pred: np.ndarray, num_classes: int = 4) -> Ima
     while len(palette) < num_classes:
         palette.append((np.random.rand(), np.random.rand(), np.random.rand()))
 
-    # 叠加：保持 60% 原图 + 40% 色彩
+    # Overlay: keep 60% original image + 40% color
     for k in range(1, num_classes):
         tint = np.array(palette[k])
         mask_k = (pred == k)
@@ -68,7 +68,7 @@ def main():
     ap.add_argument("--device", type=str, default="cuda", help="cuda or cpu")
     args = ap.parse_args()
 
-    # device
+    # select device
     dev = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     # load and normalize image
@@ -77,10 +77,10 @@ def main():
     img_z = (img - img.mean()) / (img.std() + 1e-6)
     x = torch.from_numpy(img_z[None, None, ...]).float().to(dev)  # 1x1xHxW
 
-    # build model (keep same hyper-params as training)
+    # build model (same hyperparameters as training)
     model = UNetRes(in_ch=1, n_classes=args.num_classes, base=args.base).to(dev)
     ckpt = torch.load(args.weights, map_location=dev)
-    # 兼容 {'model': state_dict} 或直接 state_dict
+    # compatible with {'model': state_dict} or direct state_dict
     state_dict = ckpt.get("model", ckpt)
     model.load_state_dict(state_dict, strict=True)
     model.eval()
@@ -89,7 +89,7 @@ def main():
         logits = model(x)                 # [1,C,h',w']
         logits = upsample_to_hw(logits, (H, W))
         probs = torch.sigmoid(logits)[0].cpu().numpy()      # CxHxW
-        # 对互斥语义分割：argmax；如做多标签可改成逐类阈值
+        # For mutually exclusive semantic segmentation: use argmax; for multi-label, apply per-class threshold
         pred = probs.argmax(axis=0).astype(np.int64)        # HxW
 
     overlay = overlay_mask(img, pred, num_classes=args.num_classes)

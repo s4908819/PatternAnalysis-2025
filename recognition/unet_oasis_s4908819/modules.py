@@ -34,14 +34,14 @@ class Down(nn.Module):
 
 class Up(nn.Module):
     """
-    上采样块：
-      in_ch   : 来自更深层的输入通道
-      skip_ch : 与之拼接的 skip 特征通道
-      out_ch  : 本层输出通道
-    设计要点：
-      先把 in_ch 上采样到 out_ch；
-      拼接后通道 = out_ch(上采样) + skip_ch；
-      再用 DoubleConv( out_ch + skip_ch -> out_ch ) 消化融合。
+    Upsampling block:
+      in_ch   : input channels from a deeper layer
+      skip_ch : skip connection feature channels
+      out_ch  : output channels for this layer
+    Design notes:
+      First upsample in_ch to out_ch;
+      After concatenation, total channels = out_ch(upsampled) + skip_ch;
+      Then fuse via DoubleConv(out_ch + skip_ch -> out_ch).
     """
     def __init__(self, in_ch: int, skip_ch: int, out_ch: int):
         super().__init__()
@@ -50,7 +50,7 @@ class Up(nn.Module):
 
     def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
         x = self.up(x)
-        # 若维度不齐（整除误差），对齐到 skip 的空间尺寸
+        # Align to skip’s spatial dimensions if mismatch due to rounding
         if x.size(-1) != skip.size(-1) or x.size(-2) != skip.size(-2):
             diffY = skip.size(-2) - x.size(-2)
             diffX = skip.size(-1) - x.size(-1)
@@ -59,7 +59,7 @@ class Up(nn.Module):
                 [diffX // 2, diffX - diffX // 2,
                  diffY // 2, diffY - diffY // 2]
             )
-        # 通道维拼接： [N, C, H, W]
+        # Concatenate along channel dimension: [N, C, H, W]
         x = torch.cat([x, skip], dim=1)
         return self.conv(x)
 
@@ -75,12 +75,12 @@ class OutConv(nn.Module):
 
 class UNet(nn.Module):
     """
-    标准对称 U-Net（3 个下采样 + bottleneck + 3 个上采样）
-    - in_ch:    输入通道（OASIS 灰度=1；若你把 PNG 堆成 RGB，则传 3）
-    - n_classes:类别数（按你的 mask 来设，比如 3/4）
-    - base:     基础通道宽度（32/64 均可）
-    编码： base, 2b, 4b, 8b, 16b
-    解码： 16b->8b (skip 8b), 8b->4b (skip 4b), 4b->2b (skip 2b)
+    Standard symmetric U-Net (3 downsamples + bottleneck + 3 upsamples)
+    - in_ch:    input channels (OASIS grayscale=1; if stacked PNGs as RGB, use 3)
+    - n_classes:number of classes (e.g., 3 or 4 depending on mask)
+    - base:     base channel width (32 or 64 both fine)
+    Encoder: base, 2b, 4b, 8b, 16b
+    Decoder: 16b->8b (skip 8b), 8b->4b (skip 4b), 4b->2b (skip 2b)
     """
     def __init__(self, in_ch: int = 1, n_classes: int = 3, base: int = 32):
         super().__init__()
@@ -91,7 +91,7 @@ class UNet(nn.Module):
         self.down3 = Down(base * 4, base * 8)        # -> 8b
         self.bottleneck = DoubleConv(base * 8, base * 16)  # -> 16b
 
-        # Decoder（显式指定 skip_ch）
+        # Decoder (explicitly specify skip_ch)
         self.up3 = Up(in_ch=base * 16, skip_ch=base * 8, out_ch=base * 8)  # 16b -> 8b
         self.up2 = Up(in_ch=base * 8,  skip_ch=base * 4, out_ch=base * 4)  # 8b  -> 4b
         self.up1 = Up(in_ch=base * 4,  skip_ch=base * 2, out_ch=base * 2)  # 4b  -> 2b

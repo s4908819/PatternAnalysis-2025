@@ -19,8 +19,8 @@ class ConvBNReLU(nn.Module):
 
 class ResBlock(nn.Module):
     """
-    残差块：ConvBNReLU × 2 + shortcut
-    - 若 in_ch != out_ch，用 1x1 卷积对残差分支做投影以匹配通道
+    Residual block: ConvBNReLU × 2 + shortcut.
+    - If in_ch != out_ch, use a 1x1 conv to project the residual to match channels.
     """
     def __init__(self, in_ch: int, out_ch: int):
         super().__init__()
@@ -48,14 +48,14 @@ class Down(nn.Module):
 
 class Up(nn.Module):
     """
-    上采样块（与原版 Up 的接口保持一致）：
-      in_ch   : 来自更深层的输入通道
-      skip_ch : 与之拼接的 skip 特征通道
-      out_ch  : 本层输出通道
-    步骤：
-      1) 反卷积把 in_ch 上采样到 out_ch；
-      2) 与 skip 在通道维拼接（out_ch + skip_ch）；
-      3) 用 ResBlock( out_ch + skip_ch -> out_ch ) 融合。
+    Upsampling block (keeps the same interface as the original Up):
+      in_ch   : input channels from the deeper layer
+      skip_ch : skip-connection feature channels to concatenate
+      out_ch  : output channels for this level
+    Steps:
+      1) Deconvolution upsamples in_ch to out_ch;
+      2) Concatenate with skip along channel dim (out_ch + skip_ch);
+      3) Fuse with ResBlock(out_ch + skip_ch -> out_ch).
     """
     def __init__(self, in_ch: int, skip_ch: int, out_ch: int):
         super().__init__()
@@ -64,7 +64,7 @@ class Up(nn.Module):
 
     def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
         x = self.up(x)
-        # 若空间尺寸不齐，pad 对齐到 skip
+        # If spatial sizes differ, pad to align with skip
         if x.size(-1) != skip.size(-1) or x.size(-2) != skip.size(-2):
             diffY = skip.size(-2) - x.size(-2)
             diffX = skip.size(-1) - x.size(-1)
@@ -89,12 +89,12 @@ class OutConv(nn.Module):
 # ---------------- Residual U-Net ----------------
 class UNetRes(nn.Module):
     """
-    残差版对称 U-Net（结构与你现有 UNet 保持一致）：
-      编码： base, 2b, 4b, 8b, 16b
-      解码： 16b->8b (skip 8b), 8b->4b (skip 4b), 4b->2b (skip 2b)
-    - in_ch:     输入通道（灰度=1）
-    - n_classes: 类别数
-    - base:      基础通道宽度（默认 32；显存紧张可用 16）
+    Residual symmetric U-Net (structure matches your existing U-Net):
+      Encoder: base, 2b, 4b, 8b, 16b
+      Decoder: 16b->8b (skip 8b), 8b->4b (skip 4b), 4b->2b (skip 2b)
+    - in_ch:     input channels (grayscale = 1)
+    - n_classes: number of classes
+    - base:      base channel width (default 32; use 16 if memory is tight)
     """
     def __init__(self, in_ch: int = 1, n_classes: int = 3, base: int = 32):
         super().__init__()
@@ -105,7 +105,7 @@ class UNetRes(nn.Module):
         self.down3 = Down(base * 4, base * 8)          # -> 8b
         self.bottleneck = ResBlock(base * 8, base * 16)  # -> 16b
 
-        # Decoder（保持与原 Up 相同的构造签名）
+        # Decoder (keep the same constructor signature as the original Up)
         self.up3  = Up(in_ch=base * 16, skip_ch=base * 8, out_ch=base * 8)  # 16b -> 8b
         self.up2  = Up(in_ch=base * 8,  skip_ch=base * 4, out_ch=base * 4)  # 8b  -> 4b
         self.up1  = Up(in_ch=base * 4,  skip_ch=base * 2, out_ch=base * 2)  # 4b  -> 2b

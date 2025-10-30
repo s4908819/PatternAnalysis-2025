@@ -5,19 +5,19 @@ import torch
 import torch.nn.functional as F
 from torch.optim import AdamW
 
-# headless 绘图
+# headless plotting
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# === 使用 HipMRI 数据加载器与 ResUNet ===
+# === Use HipMRI dataset loader and ResUNet ===
 from dataset_hipmri import make_loader_from_split
-from modules_resunet import UNetRes  # 保持与训练一致的模型
+from modules_resunet import UNetRes  # Keep consistent with the training model
 
 
 # ---------------- Utils ----------------
 def upsample_to_target(logits: torch.Tensor, target_onehot: torch.Tensor) -> torch.Tensor:
-    """将 logits 双线性插值到与 target 相同的 HxW（只插值 logits）。"""
+    """Upsample logits by bilinear interpolation to match target’s HxW (resize logits only)."""
     if logits.shape[-2:] != target_onehot.shape[-2:]:
         logits = F.interpolate(logits, size=target_onehot.shape[-2:], mode="bilinear", align_corners=False)
     return logits
@@ -30,10 +30,10 @@ def ce_dice_loss(
     eps: float = 1e-6
 ):
     """
-    CrossEntropy + (1 - mean Dice) 组合损失。
-    - logits: (B, K, H, W) 原始分数（未 softmax）
-    - target_onehot: (B, K, H, W) 浮点 one-hot
-    返回: loss, ce_val(detached), dice_val(detached)
+    Combined CrossEntropy + (1 - mean Dice) loss.
+    - logits: (B, K, H, W) raw model scores (before softmax)
+    - target_onehot: (B, K, H, W) float one-hot
+    Returns: loss, ce_val(detached), dice_val(detached)
     """
     B, K, H, W = logits.shape
     with torch.no_grad():
@@ -87,19 +87,19 @@ def plot_curves(history, outdir):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data_root", type=str, required=True,
-                    help="HipMRI 根目录（包含 keras_slices_data 或其上级目录）")
+                    help="Root directory of HipMRI (contains keras_slices_data or parent directory)")
     ap.add_argument("--num_classes", type=int, default=4)
     ap.add_argument("--epochs", type=int, default=20)
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--out", type=str, default="runs/hipmri_resunet")
-    ap.add_argument("--workers", type=int, default=None, help="DataLoader workers（默认自动）")
-    ap.add_argument("--base", type=int, default=32, help="ResUNet 的 base 通道数（16/32）")
+    ap.add_argument("--workers", type=int, default=None, help="DataLoader workers (default auto)")
+    ap.add_argument("--base", type=int, default=32, help="Base channel width for ResUNet (16/32)")
     ap.add_argument("--resize", type=int, default=256,
-                    help="可选：统一缩放到 (resize, resize)；传 0 表示不缩放")
-    # 新增：二分类开关（前景 vs 背景）
+                    help="Optional: resize to (resize, resize); set 0 to disable resizing")
+    # Added: binary switch (foreground vs background)
     ap.add_argument("--binary", type=int, default=0,
-                    help="是否启用二分类模式（前景=非0），1 启用 / 0 关闭")
+                    help="Enable binary mode (foreground=nonzero); 1=on / 0=off")
     args = ap.parse_args()
 
     has_cuda = torch.cuda.is_available()
@@ -110,7 +110,7 @@ def main():
     print(f"[config] epochs={args.epochs}  batch={args.batch}  lr={args.lr}  base={args.base}  resize={args.resize}")
     print(f"[config] workers={auto_workers}  device={'cuda' if has_cuda else 'cpu'}")
 
-    # DataLoaders（与 dataset_hipmri.py 一致）
+    # DataLoaders (consistent with dataset_hipmri.py)
     train_loader = make_loader_from_split(
         root=args.data_root, split="train", num_classes=args.num_classes,
         batch=args.batch, shuffle=True, augment=True, workers=auto_workers,
@@ -125,7 +125,7 @@ def main():
     device = torch.device("cuda" if has_cuda else "cpu")
     torch.backends.cudnn.benchmark = has_cuda
 
-    # Model & Optimizer（使用残差 UNet）
+    # Model & Optimizer (ResUNet)
     model = UNetRes(in_ch=1, n_classes=args.num_classes, base=args.base).to(device)
     opt = AdamW(model.parameters(), lr=args.lr, weight_decay=1e-5)
 
@@ -147,7 +147,7 @@ def main():
             logits = model(img)                   # (B,K,H,W)
             logits = upsample_to_target(logits, mask)
 
-            # 二分类与多分类均以 no-bg Dice 作为优化/监控指标（K=2 时即前景通道）
+            # Binary and multiclass both use no-background Dice as optimization metric
             loss, ce_val, dice_val = ce_dice_loss(logits, mask, exclude_background=True)
             loss.backward()
             opt.step()
@@ -185,7 +185,7 @@ def main():
 
         print(f"[epoch {ep:03d}] loss {tl:.4f}/{vl:.4f}  dice(no-bg) {td:.4f}/{vd:.4f}")
 
-        # 以验证 Dice 作为 best
+        # Save best by validation Dice
         if vd > best:
             best = vd
             torch.save(
@@ -201,7 +201,7 @@ def main():
                 os.path.join(args.out, "best.pt")
             )
 
-        # 每个 epoch 更新曲线
+        # Update curves each epoch
         plot_curves(hist, args.out)
 
     print(f"best val mean Dice (no-bg) = {best:.4f}")
