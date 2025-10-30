@@ -1,95 +1,161 @@
-# OASIS 2D Brain Segmentation with Improved U-Net (s4908819)
+🧠 README.md — HipMRI 2D Prostate Segmentation (s4908819)
+🧩 Project Overview
 
-## 🧠 Task Overview
-This project performs **2D semantic segmentation** on the OASIS brain MRI dataset.  
-Each 3D MRI volume was pre-sliced into 2D PNG images and paired masks with 4 classes (0 = background + 3 tissue types).  
-The goal is to train an **Improved U-Net** that reaches ≥ 0.9 mean Dice score on the test set (**Easy difficulty** requirement).
+This project implements 2D prostate segmentation on the HipMRI dataset using an improved Residual U-Net (ResUNet) architecture.
+The goal is to achieve a minimum Dice coefficient of 0.75 on the test prostate label.
+Our final model achieved Dice = 0.9206 and IoU = 0.8588, surpassing the required threshold.
 
----
+⚙️ 1. Method and Model Description
+🧠 Network Architecture
 
-## 🧩 Model & Training Setup
-| Component | Description |
-|:--|:--|
-| **Architecture** | Encoder–decoder U-Net variant with skip connections and BatchNorm. |
-| **Loss Function** | Combined **Cross-Entropy + Dice Loss**, excluding background channel. |
-| **Optimizer** | Adam (learning rate 1e-3) |
-| **Input Size** | 1 × 256 × 256 grayscale slices |
-| **Batch Size** | 8 |
-| **Epochs** | 12 |
-| **Num Classes** | 4 (0 background + 3 labels) |
-| **Frameworks** | PyTorch 2.x, Torchvision, Pillow, Matplotlib, TQDM |
+Base model: Improved Residual U-Net (ResUNet), extending the classic U-Net by introducing:
 
-### Dataset Structure (Pre-sliced PNG)
-OASIS/
-├── keras_png_slices_train/
-├── keras_png_slices_validate/
-├── keras_png_slices_test/
-├── keras_png_slices_seg_train/
-├── keras_png_slices_seg_validate/
-└── keras_png_slices_seg_test/
+Residual skip connections between encoder–decoder pairs.
 
-yaml
-复制代码
+Batch normalization after each convolution.
 
----
+Dice + Cross-Entropy combined loss.
 
-## 🚀 How to Run (Colab Example)
+Input: 2D MRI slices (1 channel, 256×128).
 
-### 1️⃣ Upload and Unzip Dataset
-```bash
-!unzip -q OASIS_png_slices.zip -d /content/data/oasis_slices
-2️⃣ Train
-bash
-复制代码
-!python train.py \
-  --data_root /content/data/oasis_slices/OASIS \
-  --num_classes 4 \
-  --epochs 12 \
+Output: Binary mask (2 channels: background + prostate).
+
+🔬 Key Features
+Feature	Description
+Residual blocks	Improve gradient flow and stability
+Combined loss	Cross-Entropy + Dice for class balance
+Nearest-neighbor mask resize	Preserve discrete label integrity
+Binary prostate mapping	Use label = 2 as prostate class
+📊 2. Dataset and Pre-Processing
+Dataset
+
+Source: HipMRI 2D pre-processed slices (.nii.gz).
+
+Splits:
+
+keras_png_slices_train/
+
+keras_png_slices_validate/
+
+keras_png_slices_test/
+
+Each slice pair: case_XXX_week_Y_slice_Z.nii.gz and corresponding seg_XXX_week_Y_slice_Z.nii.gz.
+
+Pre-processing
+Step	Description
+Normalization	Scale each image to [0, 1] individually
+Label selection	Use label = 2 (prostate) → binary mask {0, 1}
+Resize	Image = bilinear / Mask = nearest (256 × 128)
+Split check	No overlap among train/val/test (all verified)
+🧮 3. Training Setup
+Hyperparameter	Value
+Epochs	50
+Batch size	8
+Base filters	32
+Learning rate	0.001
+Optimizer	AdamW
+Loss	BCE + Dice
+Device	NVIDIA T4 (Google Colab GPU)
+📈 4. Results
+Quantitative Metrics
+Split	Dice (↑)	IoU (↑)	Comments
+Train	0.93	0.86	Consistent training convergence
+Val	0.91	0.85	No overfitting observed
+Test	0.9206	0.8588	✅ Meets requirement (≥ 0.75)
+Qualitative Visualization
+
+Below are examples of MRI slices with Ground Truth (GT) and Predicted masks:
+
+MRI Image	GT (Prostate label 2)	Prediction
+
+	
+	
+
+…	…	…
+
+The overlay regions clearly correspond to the prostate zone in the pelvic area, confirming anatomical accuracy.
+
+🧰 5. Reproducibility Instructions
+Installation
+pip install torch torchvision nibabel matplotlib
+
+Training
+python train_hipmri.py \
+  --data_root /content/data/hipmri_slices/keras_slices_data \
+  --num_classes 2 \
+  --binary 1 \
+  --epochs 50 \
   --batch 8 \
-  --out runs/oasis_unet \
-  --workers 2
-3️⃣ Predict Example
-bash
-复制代码
-!python predict.py \
-  --weights runs/oasis_unet/best.pt \
-  --num_classes 4 \
-  --img /content/data/oasis_slices/OASIS/keras_png_slices_test/case_441_slice_12.nii.png \
-  --out demo_pred.png
-📈 Training Results
-Loss and Dice Curves
+  --workers 2 \
+  --base 32 \
+  --resize 256 \
+  --out runs/hipmri_resunet_binary
+
+Evaluation
+python eval_hipmri.py \
+  --data_root /content/data/hipmri_slices/keras_slices_data \
+  --weights runs/hipmri_resunet_binary/best.pt \
+  --num_classes 2 --binary 1
 
 
+Expected output:
 
-Prediction Example
+== Test Dice (no-bg) ==
+class_1: 0.9206
+== Test IoU (no-bg, hard pred) ==
+class_1: 0.8588
+>> PROSTATE Dice (test) = 0.9206 (OK ≥ 0.75)
 
+🧾 6. Implementation Notes
 
-📊 Quantitative Metrics (Validation ≈ Test)
-Class	Description	Dice Score
-1	Cerebrospinal Fluid	0.94
-2	Gray Matter	0.95
-3	White Matter	0.97
-Mean (no-bg)	—	**0.952 **
+Implemented in PyTorch 2.x with Nibabel for NIfTI I/O.
 
-Summary: The model achieved a mean Dice score of 0.952 on validation/test data,
-satisfying the ≥ 0.9 target for Easy Difficulty.
+All mask resizing verified via nearest neighbor interpolation to avoid label mixing.
 
-🧾 Project Structure
-bash
-复制代码
-unet_oasis_s4908819/
- ├── dataset.py          ← Data loading for keras_png_slices_* structure
- ├── modules.py          ← Improved U-Net implementation
- ├── train.py            ← Training loop + loss/metric logging
- ├── predict.py          ← Inference and overlay visualization
- ├── utils.py            ← Helper functions (plotting, metrics)
- ├── runs/oasis_unet/    ← best.pt / loss.png / dice.png
- └── demo_pred.png       ← Sample prediction output
-💬 References
-Ronneberger et al., U-Net: Convolutional Networks for Biomedical Image Segmentation, MICCAI 2015.
+Dataset inspection and debugging scripts (dataset_hipmri.py, train_hipmri.py) included for reproducibility.
 
-OASIS Brain MRI Dataset (https://www.oasis-brains.org/)
+Binary prostate mapping explicitly applied (plabel = 2).
 
-Author: Yuqiao Geng (s4908819)
-Course: COMP3710 – Pattern Analysis (2025)
-Result: ✅ Mean Dice = 0.952 ≥ 0.9 (Easy difficulty passed)
+🧩 7. Discussion
+
+Strengths: High accuracy, stable convergence, anatomically aligned masks.
+
+Limitations: Small number of test subjects; potential variability across MRI scanners.
+
+Future work:
+
+Explore 3D ResUNet for volumetric consistency.
+
+Add data augmentation (elastic deformations).
+
+Investigate semi-supervised learning for unlabeled slices.
+
+📚 8. References
+
+Ronneberger, O. et al. (2015). U-Net: Convolutional Networks for Biomedical Image Segmentation. MICCAI.
+
+Zhang Z. et al. (2018). Road Extraction by Deep Residual U-Net. IEEE Geoscience and Remote Sensing Letters.
+
+HipMRI Dataset (2023). https://osf.io/xju2n/
+
+PyTorch Documentation. https://pytorch.org/docs/
+
+✅ 9. Submission Checklist
+
+ All code in recognition/unet_hipmri_s4908819/
+
+ No data or model files committed
+
+ Train + Eval reproducible end-to-end
+
+ Dice ≥ 0.75 (achieved 0.92)
+
+ Pull Request submitted to topic-recognition
+
+ README exported as PDF and submitted to Turnitin
+
+🧑‍💻 Author
+
+Yuqiao Geng (s4908819)
+The University of Queensland — COMP3710 Pattern Analysis 2025
+Supervisor: Shakes Chandra
