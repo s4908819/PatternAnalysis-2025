@@ -173,18 +173,8 @@ Softmax/Sigmoid → Mask
 
 ---
 
-# ✅ Comprehensive Summary
 
-This implementation enhances **gradient propagation**, **feature representation**, and **stability** through:
-- Residual blocks  
-- Batch Normalisation  
-- AdamW optimiser  
-- CE + Dice composite loss  
-- Nearest-neighbour mask scaling  
 
-→ Achieved **Dice=0.9206**, **IoU=0.8588**, **Val Dice=0.9242** on test set.
-
----
 
 # 🧠 Working Pipeline
 
@@ -273,6 +263,24 @@ class_1: 0.8588
 ```
 
 ---
+## 🧩 Dependencies & Environment
+
+| Package      | Version         |
+|---------------|-----------------|
+| **Python**    | 3.12.12         |
+| **PyTorch**   | 2.8.0+cu126     |
+| **TorchVision** | 0.23.0+cu126  |
+| **TorchAudio** | 2.8.0+cu126    |
+| **Nibabel**   | 5.3.2           |
+| **NumPy**     | 2.0.2           |
+| **Matplotlib** | 3.10.0         |
+
+---
+
+**Hardware:** Google Colab GPU — NVIDIA A100-SXM4-80GB  
+**CUDA/cuDNN:** CUDA 12.6, cuDNN 91002  
+**Reproducibility:** All random seeds fixed (`torch.manual_seed(49088191)`)
+
 
 # 📊 Results & Visualisation
 
