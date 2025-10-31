@@ -65,25 +65,40 @@ training and evaluation scripts: `train_hipmri.py` and `eval_hipmri.py`.
 
 ---
 
-# 🧩 数学表述（Theoretical Formulation）
+## 🧩 Theoretical Formulation
 
-令输入切片 \(x ∈ ℝ^{1×H×W}\)，输出 logits \(∈ ℝ^{K×H×W}\)。  
-Softmax 概率：
-\[
-p_c = softmax(logits)_c, \quad c = 0, …, K-1
-\]
+Let the input slice be \( x \in \mathbb{R}^{1 \times H \times W} \),  
+and the network output logits \( z \in \mathbb{R}^{K \times H \times W} \).
 
-组合损失：
-\[
-L_{total} = CE(logits, argmax(t)) + (1 - Dice_{mean}(p_c, t_c)), \quad c ∈ C={1,…,K-1}
-\]
+**Softmax probability for class \( c \):**
 
-单类 Dice：
 \[
-Dice_c = \frac{2⟨p_c, t_c⟩ + ε}{‖p_c‖_1 + ‖t_c‖_1 + ε}
+p_c = \text{softmax}(z)_c, \quad c = 0, \dots, K-1
 \]
 
 ---
+
+### Combined Loss Function
+
+The total loss combines **Cross-Entropy (CE)** and **Dice Loss** (excluding background):
+
+\[
+L_{\text{total}} = \text{CE}(z, \arg\max(t)) + \left( 1 - \text{Dice}_{\text{mean}}(p_c, t_c) \right),
+\quad c \in \mathcal{C} = \{1, \dots, K-1\}
+\]
+
+---
+
+### Class-wise Dice Coefficient
+
+For each class \( c \), the Dice score is defined as:
+
+\[
+\text{Dice}_c = \frac{2 \langle p_c, t_c \rangle + \varepsilon}
+{\| p_c \|_1 + \| t_c \|_1 + \varepsilon}
+\]
+
+where \( \varepsilon \) is a small constant to ensure numerical stability.
 
 # 🗂️ Data and Label Processing (Aligned with Dataset Implementation)
 
@@ -155,17 +170,6 @@ Softmax/Sigmoid → Mask
 | 9️⃣ | Inference Normalisation | Sigmoid + argmax = softmax ordering |
 | 🔟 | Logging & Visualisation | loss.png, dice.png auto-saved |
 
----
-
-# 🧩 Effect Summary
-
-| Metric | Value | Description |
-|:--|:--|:--|
-| Validation Dice | 0.9242 | Best epoch 50 |
-| Test Dice | 0.9206 | ✅ Pass ≥ 0.75 |
-| Test IoU | 0.8588 | Accurate boundary overlap |
-| Training | Stable | No oscillations |
-| Generalisation | Strong | Val/Test difference < 0.02 |
 
 ---
 
@@ -286,14 +290,20 @@ class_1: 0.8588
 
 ---
 
-# 🧮 Model Performance Summary
+## 📈 Results Summary
 
-| Metric          | Value  | Evaluation                  |
-| :-------------- | :----- | :-------------------------- |
-| Dice (Prostate) | 0.9206 | ✅ Above 0.75                |
-| IoU (Prostate)  | 0.8588 | ✅ Accurate                  |
-| Convergence     | Smooth | ✅ Stable                    |
-| Generalisation  | Strong | ✅ Consistent Train/Val/Test |
+| **Metric** | **Value** | **Description** |
+|:------------|:----------:|:----------------|
+| **Validation Dice** | 0.9242 | Reached peak at epoch 50 |
+| **Test Dice (Prostate)** | 0.9206 | ✅ Exceeds the minimum requirement (≥ 0.75) |
+| **Test IoU (Prostate)** | 0.8588 | Accurate boundary overlap |
+| **Convergence** | Stable | Loss and Dice curves show consistent improvement |
+| **Generalisation** | Strong | Validation–test gap < 0.02 |
+
+---
+
+The model demonstrated **stable convergence** throughout training with **no signs of overfitting**.  
+Final performance on the test set **significantly surpasses the “Normal Difficulty” threshold (Dice ≥ 0.75)** specified in the COMP3710 Pattern Analysis report.
 
 ---
 
@@ -340,37 +350,11 @@ class_1: 0.8588
    MICCAI 2015, LNCS 9351. [DOI:10.1007/978-3-319-24574-4_28]
 2. **Zhang, Z.**, Liu, Q., Wang, Y. (2018). *Road Extraction by Deep Residual U-Net*.
    IEEE GRSL, 15(5), 749–753. [DOI:10.1109/LGRS.2018.2802944]
-3. **HipMRI Dataset** (2023). *The HipMRI Study for Prostate Cancer Radiotherapy*.
-   OSF: [https://osf.io/xju2n/](https://osf.io/xju2n/)
-4. **COMP3710 Pattern Analysis Report** (v1.64 Final, 2025). UQ ITEE.
-5. **PyTorch Documentation** (2024). [https://pytorch.org/docs/](https://pytorch.org/docs/)
-6. **Nibabel Library** (2024). [https://nipy.org/nibabel/](https://nipy.org/nibabel/)
+3. **COMP3710 Pattern Analysis Report** (v1.64 Final, 2025). UQ ITEE.
+4. **PyTorch Documentation** (2024). [https://pytorch.org/docs/](https://pytorch.org/docs/)
+5. **Nibabel Library** (2024). [https://nipy.org/nibabel/](https://nipy.org/nibabel/)
 
 ---
 
-# 👤 Author & Academic Integrity Statement
 
-| 项目                          | 内容                                                            |
-| :-------------------------- | :------------------------------------------------------------ |
-| **姓名（Name）**                | Yuqiao Geng                                                   |
-| **学号（Student ID）**          | s4908819                                                      |
-| **课程（Course）**              | COMP3710 – Pattern Analysis (Semester 2, 2025)                |
-| **学校（Institution）**         | The University of Queensland, School of ITEE                  |
-| **项目名称（Project Title）**     | HipMRI 2D Prostate Segmentation using Improved Residual U-Net |
-| **实现难度（Difficulty Level）**  | Normal (Dice ≥ 0.75 requirement achieved)                     |
-| **最终结果（Final Performance）** | Dice = 0.9206 / IoU = 0.8588 ✅ 满足评分标准                         |
-
----
-
-## 🔒 Academic Integrity Declaration
-
-I declare that this submission is my own original work completed as part of the requirements for COMP3710 (Pattern Analysis) at The University of Queensland.
-All code, documentation, and results were developed independently.
-Any AI assistance (e.g., ChatGPT) was used **only for explanation, formatting, and code commenting**, with all final implementations and analyses personally verified and authored by me.
-
-**— Yuqiao Geng (s4908819), 2025-10-30**
-
-```
-
----
 
