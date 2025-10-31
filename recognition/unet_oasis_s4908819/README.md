@@ -164,11 +164,16 @@ OASIS/
 ## 📊 Training & Evaluation
 
 * Model converged after **~5 epochs** (~15 minutes total training).
-* Outputs generated in `runs/oasis_unet/`:
+* Outputs generated in `run/`:
 
-  * [`loss.png`](https://github.com/s4908819/PatternAnalysis-2025/blob/topic-recognition/recognition/unet_oasis_s4908819/runs/oasis_unet/loss.png?raw=true) — Training/validation loss curve  
-  * [`dice.png`](https://github.com/s4908819/PatternAnalysis-2025/blob/topic-recognition/recognition/unet_oasis_s4908819/runs/oasis_unet/dice.png?raw=true) — Validation mean Dice curve  
-  * [`best.pt`](https://github.com/s4908819/PatternAnalysis-2025/blob/topic-recognition/recognition/unet_oasis_s4908819/runs/oasis_unet/best.pt?raw=true) — Best-performing checkpoint
+* **`loss.png`** — Training/validation loss curve  
+  ![Loss Curve](https://raw.githubusercontent.com/s4908819/PatternAnalysis-2025/topic-recognition/recognition/unet_oasis_s4908819/run/loss.png)
+
+* **`dice.png`** — Validation mean Dice curve  
+  ![Dice Curve](https://raw.githubusercontent.com/s4908819/PatternAnalysis-2025/topic-recognition/recognition/unet_oasis_s4908819/run/dice.png)
+
+* **`best.pt`** — Best-performing checkpoint (model weights)
+
 
 **Final Result**
 
