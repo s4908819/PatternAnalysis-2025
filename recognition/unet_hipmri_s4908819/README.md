@@ -65,16 +65,23 @@ training and evaluation scripts: `train_hipmri.py` and `eval_hipmri.py`.
 
 ---
 
+
 ## 🧩 Theoretical Formulation
 
-Let the input slice be \( x \in \mathbb{R}^{1 \times H \times W} \),  
-and the network output logits \( z \in \mathbb{R}^{K \times H \times W} \).
+Let the input slice be **x ∈ ℝ¹×ᴴ×ᵂ**,  
+and the network output logits **z ∈ ℝᴷ×ᴴ×ᵂ**.
 
-**Softmax probability for class \( c \):**
+---
 
-\[
-p_c = \text{softmax}(z)_c, \quad c = 0, \dots, K-1
-\]
+### Softmax Probability
+
+For each class *c* (0 ≤ c < K):
+
+```
+
+p_c = softmax(z)_c
+
+```
 
 ---
 
@@ -82,23 +89,28 @@ p_c = \text{softmax}(z)_c, \quad c = 0, \dots, K-1
 
 The total loss combines **Cross-Entropy (CE)** and **Dice Loss** (excluding background):
 
-\[
-L_{\text{total}} = \text{CE}(z, \arg\max(t)) + \left( 1 - \text{Dice}_{\text{mean}}(p_c, t_c) \right),
-\quad c \in \mathcal{C} = \{1, \dots, K-1\}
-\]
+```
+
+L_total = CE(z, argmax(t)) + (1 - Dice_mean(p_c, t_c))
+where c ∈ {1, ..., K-1}
+
+```
 
 ---
 
 ### Class-wise Dice Coefficient
 
-For each class \( c \), the Dice score is defined as:
+For each class *c*, the Dice score is defined as:
 
-\[
-\text{Dice}_c = \frac{2 \langle p_c, t_c \rangle + \varepsilon}
-{\| p_c \|_1 + \| t_c \|_1 + \varepsilon}
-\]
+```
 
-where \( \varepsilon \) is a small constant to ensure numerical stability.
+Dice_c = (2⟨p_c, t_c⟩ + ε) / (‖p_c‖₁ + ‖t_c‖₁ + ε)
+
+```
+
+where **ε** is a small constant to ensure numerical stability.
+```
+
 
 # 🗂️ Data and Label Processing (Aligned with Dataset Implementation)
 
