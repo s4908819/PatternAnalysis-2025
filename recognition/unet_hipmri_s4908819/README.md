@@ -109,11 +109,10 @@ Dice_c = (2⟨p_c, t_c⟩ + ε) / (‖p_c‖₁ + ‖t_c‖₁ + ε)
 ```
 
 where **ε** is a small constant to ensure numerical stability.
-```
+
 ---
 
 # 🗂️ Data and Label Processing (Aligned with Dataset Implementation)
-
 **Code:** `dataset_hipmri.py`
 
 - **Normalization:** z-score per image  
