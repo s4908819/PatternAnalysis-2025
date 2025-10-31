@@ -380,4 +380,8 @@ Final performance on the test set **significantly surpasses the “Normal Diffic
 ---
 
 
+### 🤖 AI Assistance Acknowledgement
+
+This report was partially supported by **ChatGPT (OpenAI, [https://chat.openai.com](https://chat.openai.com))** for brainstorming, code clarification, and README polishing, and **DeepL Translate ([https://www.deepl.com](https://www.deepl.com))** for bilingual translation.
+
 
