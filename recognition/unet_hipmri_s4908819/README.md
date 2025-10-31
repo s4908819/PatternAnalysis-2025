@@ -374,8 +374,3 @@ Any AI assistance (e.g., ChatGPT) was used **only for explanation, formatting, a
 
 ---
 
-要直接使用：
-1. 将上述 Markdown 保存为 `README.md`。  
-2. 放入 `recognition/unet_hipmri_s4908819/` 目录中。  
-3. GitHub 会自动渲染为带标题、表格、公式与代码块的正式文档。
-```
