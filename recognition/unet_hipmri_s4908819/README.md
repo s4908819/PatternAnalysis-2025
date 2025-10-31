@@ -282,10 +282,14 @@ class_1: 0.8588
 | Validation      | 0.9242 | ≈0.86  | No overfitting |
 | Test (Prostate) | 0.9206 | 0.8588 | ✅ Pass ≥ 0.75  |
 
-**Training Curves:**
+## 📊 Training Curves
 
-* `loss.png`: loss decreases smoothly
-* `dice.png`: validation Dice peaks ~0.92
+* **`loss.png`** — Loss decreases smoothly  
+  ![Loss Curve](https://raw.githubusercontent.com/s4908819/PatternAnalysis-2025/topic-recognition/recognition/unet_hipmri_s4908819/run/loss.png)
+
+* **`dice.png`** — Validation Dice peaks around 0.92  
+  ![Dice Curve](https://raw.githubusercontent.com/s4908819/PatternAnalysis-2025/topic-recognition/recognition/unet_hipmri_s4908819/run/dice.png)
+
 * `best.pt` saved at epoch 50
 
 ---
