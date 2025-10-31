@@ -385,3 +385,13 @@ Final performance on the test set **significantly surpasses the “Normal Diffic
 This report was partially supported by **ChatGPT (OpenAI, [https://chat.openai.com](https://chat.openai.com))** for brainstorming, code clarification, and README polishing, and **DeepL Translate ([https://www.deepl.com](https://www.deepl.com))** for bilingual translation.
 
 
+---
+
+## 👤 Student Information
+
+| **Name** | **Student ID** | **Course** | **University** |
+|:--|:--|:--|:--|
+| **Yuqiao Geng** | **s4908819** | COMP3710 – Pattern Analysis | The University of Queensland |
+
+---
+
